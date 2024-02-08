@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2022 Paranoid Android
  * Copyright (C) 2022 StatiXOS
- * Copyright (C) 2023 the RisingOS Android Project
+ * Copyright (C) 2024 the RisingOS Android Project
  *           (C) 2023 ArrowOS
  *           (C) 2023 The LibreMobileOS Foundation
  *
@@ -55,7 +55,7 @@ public class PropImitationHooks {
     
     private static final String PRODUCT_DEVICE = "ro.product.device";
 
-    private static final String sMainFP = "google/husky/husky:14/UQ1A.240105.004.A1/11206926:user/release-keys";
+    private static final String sMainFP = "google/husky/husky:14/UQ1A.240205.004.B1/11318806:user/release-keys";
     private static final String sMainModel = "Pixel 8 Pro";
     private static final String sMainFpTablet = "google/tangorpro/tangorpro:14/UQ1A.240105.002/11129216:user/release-keys";
     private static final String sMainModelTablet = "Pixel Tablet";
@@ -213,10 +213,10 @@ public class PropImitationHooks {
             || processName.toLowerCase().contains("aiai") && processName.toLowerCase().contains("google");
 
         if (sIsGms) {
-            if (shouldTryToCertifyDevice()) {
+            if (shouldTryToSpoofDevice()) {
                 dlog("Spoofing build for GMS");
                 setPropValue("TIME", System.currentTimeMillis());
-                spoofBuildGms();
+                sMainSpoofProps.forEach((k, v) -> setPropValue(k, v));
             } else {
                 Process.killProcess(Process.myPid());
             }
@@ -246,10 +246,6 @@ public class PropImitationHooks {
                 case PACKAGE_ARCORE:
                     dlog("Setting stock fingerprint for: " + packageName);
                     setPropValue("FINGERPRINT", sStockFp);
-                    break;
-                case PACKAGE_SNAPCHAT:
-                    dlog("Spoofing build for: " + packageName);
-                    spoofBuildGms();
                     break;
                 case PACKAGE_GPHOTOS:
                     gPhotosProps.forEach((k, v) -> setPropValue(k, v));
@@ -288,7 +284,7 @@ public class PropImitationHooks {
         }
     }
 
-    private static boolean shouldTryToCertifyDevice() {
+    private static boolean shouldTryToSpoofDevice() {
         final boolean[] shouldCertify = {true};
         boolean was = isGmsAddAccountActivityOnTop();
         String reason = "GmsAddAccountActivityOnTop";
@@ -307,12 +303,6 @@ public class PropImitationHooks {
             ActivityTaskManager.getService().registerTaskStackListener(taskStackListener);
         } catch (Exception e) {
             Log.e(TAG, "Failed to register task stack listener!", e);
-        } finally {
-            if (shouldCertify[0]) {
-                try {
-                    ActivityTaskManager.getService().unregisterTaskStackListener(taskStackListener);
-                } catch (Exception e) {}
-            }
         }
         return shouldCertify[0];
     }
@@ -372,16 +362,6 @@ public class PropImitationHooks {
         }
     }
 
-    private static void spoofBuildGms() {
-        setPropValue("BRAND", "NVIDIA");
-        setPropValue("MANUFACTURER", "NVIDIA");
-        setPropValue("DEVICE", "foster");
-        setPropValue("FINGERPRINT", "NVIDIA/foster_e/foster:7.0/NRD90M/2427173_1038.2788:user/release-keys");
-        setPropValue("MODEL", "SHIELD Android TV");
-        setPropValue("PRODUCT", "foster_e");
-        setVersionFieldString("SECURITY_PATCH", "2018-01-05");
-    }
-
     private static void setVersionFieldString(String key, String value) {
         try {
             // Unlock
@@ -405,10 +385,10 @@ public class PropImitationHooks {
 
     public static void onEngineGetCertificateChain() {
         // Check stack for SafetyNet or Play Integrity
-        if (!shouldTryToCertifyDevice()) {
+        if (!shouldTryToSpoofDevice() || sIsSetupWizard) {
             Process.killProcess(Process.myPid());
         }
-        if ((isCallerSafetyNet() || sIsFinsky) && !sIsSetupWizard) {
+        if ((isCallerSafetyNet() || sIsFinsky)) {
             dlog("Blocked key attestation sIsGms=" + sIsGms + " sIsFinsky=" + sIsFinsky);
             throw new UnsupportedOperationException();
         }
