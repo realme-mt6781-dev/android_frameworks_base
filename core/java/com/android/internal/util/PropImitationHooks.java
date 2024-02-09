@@ -176,6 +176,13 @@ public class PropImitationHooks {
             "com.dts.freefiremax",
             "com.dts.freefireth"
     ));
+    
+    private static final Set<String> EXCLUDED_PACKAGES = new HashSet<>(Arrays.asList(
+            PACKAGE_GPHOTOS, 
+            PACKAGE_ARCORE,
+            PACKAGE_GMS,
+            PACKAGE_FINSKY
+    ));
 
     private static String getBuildID(String fingerprint) {
         Pattern pattern = Pattern.compile("([A-Za-z0-9]+\\.\\d+\\.\\d+\\.\\w+)");
@@ -187,62 +194,41 @@ public class PropImitationHooks {
         return "";
     }
 
-    private static volatile boolean sIsGms, sIsFinsky, sIsSetupWizard, sIsAtraceCoreService, sIsAiServices;
+    private static volatile boolean sIsGms, sIsFinsky, sIsSetupWizard, sIsGoogle;
     private static volatile String sProcessName;
 
     public static void setProps(Application app) {
+        if (app == null) {
+            return;
+        }
         final String packageName = app.getPackageName();
         final String processName = app.getProcessName();
-        if (app == null || packageName == null || processName == null) {
-            return;
-        }
         Context appContext = app.getApplicationContext();
-        if (appContext == null) {
+        if (packageName == null || processName == null || appContext == null) {
             return;
         }
-        sMainSpoofProps = createGoogleSpoofProps(
-            isDeviceTablet(appContext) ? sMainModelTablet : sMainModel, 
-            isDeviceTablet(appContext) ? sMainFpTablet : sMainFP);
+        final boolean sIsTablet = isDeviceTablet(appContext);
+        final String sMainSpoofDevice = sIsTablet ? sMainModelTablet : sMainModel;
+        final String sMainFP = sIsTablet ? sMainFpTablet : sMainModel;
+        sMainSpoofProps = createGoogleSpoofProps(sMainSpoofDevice, sMainFP);
         sProcessName = processName;
+        sIsGoogle = packageName.toLowerCase().contains("google") || processName.toLowerCase().contains("google");
         sIsGms = packageName.equals(PACKAGE_GMS) && processName.equals(PROCESS_GMS_UNSTABLE);
         sIsFinsky = packageName.equals(PACKAGE_FINSKY);
         sIsSetupWizard = packageName.equals(PACKAGE_SETUPWIZARD);
-        sIsAtraceCoreService = packageName.equals(PACKAGE_GMS) 
-            && (processName.equals(PROCESS_GMS_PERSISTENT) || processName.equals(PROCESS_GMS_UI));
-        sIsAiServices = packageName.toLowerCase().contains("aiai") && packageName.toLowerCase().contains("google")
-            || processName.toLowerCase().contains("aiai") && processName.toLowerCase().contains("google");
-
-        if (sIsGms) {
+        final boolean sIsExcludedPackage = EXCLUDED_PACKAGES.contains(packageName)
+            || packageName.equals(PACKAGE_ARCORE) 
+            || packageName.equals(PACKAGE_SETUPWIZARD);
+        if (sIsGoogle && !sIsExcludedPackage) {
             if (shouldTryToSpoofDevice()) {
-                dlog("Spoofing build for GMS");
+                dlog("Spoofing build for Google Services");
                 setPropValue("TIME", System.currentTimeMillis());
                 sMainSpoofProps.forEach((k, v) -> setPropValue(k, v));
             } else {
                 Process.killProcess(Process.myPid());
             }
-        } else if (sIsAtraceCoreService || sIsAiServices){
-            dlog("Spoofing as " + sMainModel + " for: " + packageName);
-            sMainSpoofProps.forEach((k, v) -> setPropValue(k, v));
         } else {
             switch (packageName) {
-                case PACKAGE_AIAI:
-                case PACKAGE_ASI:
-                case PACKAGE_COMPUTE_SERVICES:
-                case PACKAGE_SETIINGS_INTELLIGENCE:
-                case PACKAGE_SUBSCRIPTION_RED:
-                case PACKAGE_TURBO:
-                case PACKAGE_VELVET:
-                case PACKAGE_GASSIST:
-                case PACKAGE_GBOARD:
-                case PACKAGE_SETUPWIZARD:
-                case PACKAGE_GMS:
-                case PACKAGE_GCAM:
-                case PACKAGE_CINEMATIC_PHOTOS:
-                case PACKAGE_GOOGLE_WALLPAPERS:
-                case PACKAGE_EMOJI_WALLPAPER:
-                    dlog("Spoofing as " + sMainModel + " for: " + packageName);
-                    sMainSpoofProps.forEach((k, v) -> setPropValue(k, v));
-                    break;
                 case PACKAGE_ARCORE:
                     dlog("Setting stock fingerprint for: " + packageName);
                     setPropValue("FINGERPRINT", sStockFp);
@@ -251,35 +237,39 @@ public class PropImitationHooks {
                     gPhotosProps.forEach((k, v) -> setPropValue(k, v));
                     break;
                 default:
-                    if (SystemProperties.getBoolean("persist.sys.pixelprops.games", true)) {
-                        Map<String, Object> gamePropsToSpoof = null;
-                        if (packagesToChangeROG1.contains(packageName)) {
-                            dlog("Spoofing as Asus ROG 1 for: " + packageName);
-                            gamePropsToSpoof = asusROG1Props;
-                        } else if (packagesToChangeROG3.contains(packageName)) {
-                            dlog("Spoofing as Asus ROG 3 for: " + packageName);
-                            gamePropsToSpoof = asusROG3Props;
-                        } else if (packagesToChangeXP5.contains(packageName)) {
-                            dlog("Spoofing as Sony Xperia 5 for: " + packageName);
-                            gamePropsToSpoof = xperia5Props;
-                        } else if (packagesToChangeOP8P.contains(packageName)) {
-                            dlog("Spoofing as Oneplus 8 Pro for: " + packageName);
-                            gamePropsToSpoof = op8ProProps;
-                        } else if (packagesToChangeOP9R.contains(packageName)) {
-                            dlog("Spoofing as Oneplus 9R for: " + packageName);
-                            gamePropsToSpoof = op9RProps;
-                        } else if (packagesToChange11T.contains(packageName)) {
-                            dlog("Spoofing as Xiaomi Mi 11T for: " + packageName);
-                            gamePropsToSpoof = xmMi11TProps;
-                        } else if (packagesToChangeF4.contains(packageName)) {
-                            dlog("Spoofing as Xiaomi F4 for: " + packageName);
-                            gamePropsToSpoof = xmF4Props;
-                        }
-                        if (gamePropsToSpoof != null) {
-                            gamePropsToSpoof.forEach((k, v) -> setPropValue(k, v));
-                        }
-                    }
+                    spoofGameProps(packageName);
                     break;
+            }
+        }
+    }
+
+    private static void spoofGameProps(String packageName) {
+        if (SystemProperties.getBoolean("persist.sys.pixelprops.games", true)) {
+            Map<String, Object> gamePropsToSpoof = null;
+            if (packagesToChangeROG1.contains(packageName)) {
+                dlog("Spoofing as Asus ROG 1 for: " + packageName);
+                gamePropsToSpoof = asusROG1Props;
+            } else if (packagesToChangeROG3.contains(packageName)) {
+                dlog("Spoofing as Asus ROG 3 for: " + packageName);
+                gamePropsToSpoof = asusROG3Props;
+            } else if (packagesToChangeXP5.contains(packageName)) {
+                dlog("Spoofing as Sony Xperia 5 for: " + packageName);
+                gamePropsToSpoof = xperia5Props;
+            } else if (packagesToChangeOP8P.contains(packageName)) {
+                dlog("Spoofing as Oneplus 8 Pro for: " + packageName);
+                gamePropsToSpoof = op8ProProps;
+            } else if (packagesToChangeOP9R.contains(packageName)) {
+                dlog("Spoofing as Oneplus 9R for: " + packageName);
+                gamePropsToSpoof = op9RProps;
+            } else if (packagesToChange11T.contains(packageName)) {
+                dlog("Spoofing as Xiaomi Mi 11T for: " + packageName);
+                gamePropsToSpoof = xmMi11TProps;
+            } else if (packagesToChangeF4.contains(packageName)) {
+                dlog("Spoofing as Xiaomi F4 for: " + packageName);
+                gamePropsToSpoof = xmF4Props;
+            }
+            if (gamePropsToSpoof != null) {
+                gamePropsToSpoof.forEach((k, v) -> setPropValue(k, v));
             }
         }
     }
